@@ -7,6 +7,8 @@ from sklearn.model_selection import train_test_split
 import numpy as np
 import dataset_tool.btree
 from sklearn.metrics import accuracy_score
+from glob import glob
+import rasterio as rio
 
 
 class Dataset6BinaryTree:
@@ -25,6 +27,10 @@ class Dataset6BinaryTree:
         self.current_tree = dataset_tool.binarytree_creator.create_tree(categories)
 
     def create_model(self):
+        """
+        Creates binary model keras instance
+        :return:
+        """
         model = tf.keras.models.Sequential([
             layers.naive_bayes.MultiClassNaiveBayesLayer(num_features=12, num_of_categories=2, input_shape=(12,)),
             Activation("softmax")
@@ -79,6 +85,10 @@ class Dataset6BinaryTree:
         return supported_cagetories
 
     def create_models(self):
+        """
+        Creates sequence of Keras binary models to classify items
+        :return: Sequence of Keras models with preseted weights
+        """
         self.__remap_dataset_withsupported()
         current_tree = self.current_tree
         iteration = 0
@@ -208,8 +218,14 @@ class Dataset6BinaryTree:
         self.y_test_new = np.delete(self.y_test, to_exclude_test, axis=0)
 
     def validate_with_test_data(self, iterations = -1):
+        """
+        Validate current dataset with splited test data, which not participated in train process
+        :param iterations: number of recursion of binary tree. By default all tree will be checked
+        :return: Array of probabilities for each category
+        """
         num_iterations = len(self.models) if iterations == -1 else iterations
         categories_idxs = {}
+        predictions_percents = []
         for iter in range(num_iterations):
             current_model = self.models[iter]
             to_test_x = self.x_test_new.copy() if self.use_excluded_array else self.x_test.copy()
@@ -224,6 +240,7 @@ class Dataset6BinaryTree:
             prediction_result = current_model.predict(to_test_x, batch_size=2048)
             prediction_result_categorized = tf.argmax(prediction_result, axis=-1).numpy()
             acc = accuracy_score(to_test_y, prediction_result_categorized)
+            predictions_percents.append(prediction_result)
             print(f"Binary acccucary for step {iter +1} is {round(acc,4) *100}%.")
             print(f"Calcaluting accuracy for {iter + 2} categories")
             prediction_result_categorized = prediction_result_categorized + iter
@@ -242,6 +259,7 @@ class Dataset6BinaryTree:
             to_test_y_verify_all[to_test_y_verify_all > iter + 2] = iter + 2
             acc_all = accuracy_score(combined_y_vec_1, to_test_y_verify_all)
             print(f"Total acccucary for step {iter +1} is {round(acc_all,4) *100}%.")
+        return predictions_percents
 
     def validate_with_test_data2(self, iterations=-1):
         num_iterations = len(self.models) if iterations == -1 else iterations
@@ -294,3 +312,69 @@ class Dataset6BinaryTree:
         acc = accuracy_score(to_test_y, prediction_result_categorized)
         print(f"Binary accuracy for step {iter + 1} is {round(acc, 4) * 100}%.")
         print(f"Calculating accuracy for {iter + 2} categories")
+
+
+    def predict_image(self, image, iterations = -1):
+        if (len(image.shape) != 3):
+            raise AssertionError("The input image is in incorrect format, please put the image with shape (-1, -1, 12)")
+
+        image_w, image_h = image.shape[0], image.shape[1]
+        image_reshaped = image.reshape(image_w*image_h, 12)
+
+        predictions = {}
+        categories_idxs = {}
+        combined_vecs = []
+        num_iterations = len(self.models) if iterations == -1 else iterations
+        for iter in range(num_iterations):
+            current_model = self.models[iter]
+            to_test_x = image_reshaped.copy()
+            # to_test_y = self.y_test_new.copy() if self.use_excluded_array else self.y_test.copy()
+            # to_test_y_verify_all = to_test_y.copy()
+            full_shape_length = image_reshaped.shape[0]
+            indexes_to_remove = np.concatenate(list(categories_idxs.values())) if len(categories_idxs) > 0 else []
+            to_test_x = np.delete(to_test_x, indexes_to_remove, axis=0)
+            # # to_test_y = np.delete(to_test_y, indexes_to_remove, axis=0)
+            # to_test_y[to_test_y == iter + 1] = 0
+            # to_test_y[to_test_y != 0] = 1
+            prediction_result = current_model.predict(to_test_x, batch_size=2048)
+            prediction_result_categorized = tf.argmax(prediction_result, axis=-1).numpy()
+            # acc = accuracy_score(to_test_y, prediction_result_categorized)
+            # print(f"Binary acccucary for step {iter + 1} is {round(acc, 4) * 100}%.")
+            # print(f"Calcaluting accuracy for {iter + 2} categories")
+            prediction_result_categorized = prediction_result_categorized + iter
+            combined_y_vec = np.empty(full_shape_length, dtype=int)
+            if (iter == 0):
+                combined_y_vec = prediction_result_categorized
+            else:
+                for cat_idx_key, categories_idxs_value in categories_idxs.items():
+                    combined_y_vec[categories_idxs_value] = cat_idx_key
+                idx_diff = np.setdiff1d(np.arange(full_shape_length), indexes_to_remove)
+                combined_y_vec[idx_diff] = prediction_result_categorized
+            idx_to_add = np.where(combined_y_vec == iter)[0]
+            print(f"Adding idxes for category {iter + 1}: {idx_to_add}")
+            categories_idxs[iter] = idx_to_add
+            predictions[iter] = prediction_result
+            combined_y_vec_1 = combined_y_vec + 1
+            combined_vecs.append(combined_y_vec_1)
+        return predictions, combined_vecs
+            # to_test_y_verify_all[to_test_y_verify_all > iter + 2] = iter + 2
+            # acc_all = accuracy_score(combined_y_vec_1, to_test_y_verify_all)
+            # print(f"Total acccucary for step {iter + 1} is {round(acc_all, 4) * 100}%.")
+
+    def load_image(self, path):
+        # if (path.contains("*B?*.tiff")):
+        #     path = path + "/*B?*.tiff"
+
+        image_bands = glob(path, recursive=True)
+        image_bands.sort()
+
+        imgs_list = []
+
+        for tst_img in image_bands:
+            with rio.open(tst_img, 'r') as img_file:
+                img_array = img_file.read(1)
+                imgs_list.append(img_array)
+
+        imgs_array = np.asarray(imgs_list)
+        imgs_array = np.moveaxis(imgs_array, 0, 2)
+        return imgs_array
