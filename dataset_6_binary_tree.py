@@ -240,7 +240,7 @@ class Dataset6BinaryTree:
             prediction_result = current_model.predict(to_test_x, batch_size=2048)
             prediction_result_categorized = tf.argmax(prediction_result, axis=-1).numpy()
             acc = accuracy_score(to_test_y, prediction_result_categorized)
-            predictions_percents.append(prediction_result)
+            #predictions_percents.append(prediction_result)
             print(f"Binary acccucary for step {iter +1} is {round(acc,4) *100}%.")
             print(f"Calcaluting accuracy for {iter + 2} categories")
             prediction_result_categorized = prediction_result_categorized + iter
@@ -259,6 +259,8 @@ class Dataset6BinaryTree:
             to_test_y_verify_all[to_test_y_verify_all > iter + 2] = iter + 2
             acc_all = accuracy_score(combined_y_vec_1, to_test_y_verify_all)
             print(f"Total acccucary for step {iter +1} is {round(acc_all,4) *100}%.")
+            mm = BinaryTreeVerificationModel(prediction_result, combined_y_vec_1, to_test_y_verify_all)
+            predictions_percents.append(mm)
         return predictions_percents
 
     def validate_with_test_data2(self, iterations=-1):
@@ -378,3 +380,9 @@ class Dataset6BinaryTree:
         imgs_array = np.asarray(imgs_list)
         imgs_array = np.moveaxis(imgs_array, 0, 2)
         return imgs_array
+
+class BinaryTreeVerificationModel:
+    def __init__(self, binary_predictions, array_of_categories, y_test):
+        self.binary_predictions = binary_predictions
+        self.array_of_categories = array_of_categories
+        self.y_test = y_test
