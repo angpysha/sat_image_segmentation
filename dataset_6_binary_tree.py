@@ -263,6 +263,39 @@ class Dataset6BinaryTree:
             predictions_percents.append(mm)
         return predictions_percents
 
+    def predict_custom_validation_data(self, x_custom):
+        """
+        Predicts custom data with current model
+        :param x_custom: custom data to predict
+        :return: Array of probabilities for each category
+        """
+        num_iterations = len(self.models)
+        categories_idxs = {}
+        predictions_percents = []
+        for iter in range(num_iterations):
+            current_model = self.models[iter]
+            to_test_x = x_custom.copy()
+            full_shape_length = to_test_x.shape[0]
+            indexes_to_remove = np.concatenate(list(categories_idxs.values())) if len(categories_idxs) > 0 else []
+            to_test_x = np.delete(to_test_x, indexes_to_remove, axis=0)
+            prediction_result = current_model.predict(to_test_x, batch_size=2048)
+            prediction_result_categorized = tf.argmax(prediction_result, axis=-1).numpy()
+            prediction_result_categorized = prediction_result_categorized + iter
+            combined_y_vec = np.empty(full_shape_length, dtype=int)
+            if (iter == 0):
+                combined_y_vec = prediction_result_categorized
+            else:
+                for cat_idx_key, categories_idxs_value in categories_idxs.items():
+                    combined_y_vec[categories_idxs_value] = cat_idx_key
+                idx_diff = np.setdiff1d(np.arange(full_shape_length), indexes_to_remove)
+                combined_y_vec[idx_diff] = prediction_result_categorized
+            idx_to_add = np.where(combined_y_vec == iter)[0]
+
+            categories_idxs[iter] = idx_to_add
+            combined_y_vec_1 = combined_y_vec + 1
+            predictions_percents.append(combined_y_vec_1)
+        return predictions_percents
+
     def validate_with_test_data2(self, iterations=-1):
         num_iterations = len(self.models) if iterations == -1 else iterations
 
@@ -380,6 +413,14 @@ class Dataset6BinaryTree:
         imgs_array = np.asarray(imgs_list)
         imgs_array = np.moveaxis(imgs_array, 0, 2)
         return imgs_array
+
+    def load_custom_verification_dataset(self, folder_path):
+        dataset_files = dataset_tool.dataset6_generator.getGroupedFiles(folder_path)
+        dataset_items = dataset_tool.dataset6_generator.load_configs(dataset_files)
+        image_parts = dataset_tool.dataset6_generator.load_image_parts(dataset_items)
+        vectorized_images = dataset_tool.dataset6_generator.vectorize(image_parts)
+        vectorized_images_stacked = dataset_tool.dataset6_generator.stack_vectors(vectorized_images)
+        return vectorized_images_stacked
 
 class BinaryTreeVerificationModel:
     def __init__(self, binary_predictions, array_of_categories, y_test):

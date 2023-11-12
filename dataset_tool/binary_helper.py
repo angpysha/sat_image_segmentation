@@ -41,11 +41,11 @@ def convert_array_to_tree(array):
     if len(array) == 2:
         return array
 
-    print(f"Intput array: {array}")
+    #print(f"Intput array: {array}")
     tree = []
     tree.append(array[0])
     cropped = convert_array_to_tree(array[1:])
-    print(f"Cropped array: {cropped}")
+    #print(f"Cropped array: {cropped}")
     tree.append(cropped)
 
     return tree
